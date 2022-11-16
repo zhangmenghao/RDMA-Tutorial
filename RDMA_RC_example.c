@@ -67,6 +67,7 @@ struct config_t
     uint32_t tcp_port;    /* server TCP port */
     int ib_port;          /* local IB port to work with */
     int gid_idx;          /* gid index to use */
+    int udp_sport;        /* udp src port */
 };
 
 /* structure to exchange data which is needed to connect the QPs */
@@ -100,7 +101,8 @@ struct config_t config =
     NULL,  /* server_name */
     19875, /* tcp_port */
     1,     /* ib_port */
-    -1     /* gid_idx */
+    -1,    /* gid_idx */
+    0      /* udp_sport */
 };
 
 /******************************************************************************
@@ -600,7 +602,7 @@ static int resources_create(struct resources *res)
     res->buf = (char *) malloc(size);
     if(!res->buf)
     {
-        fprintf(stderr, "failed to malloc %Zu bytes to memory buffer\n", size);
+        fprintf(stderr, "failed to malloc %u bytes to memory buffer\n", size);
         rc = 1;
         goto resources_create_exit;
     }
@@ -755,7 +757,7 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
     int rc;
     memset(&attr, 0, sizeof(attr));
     attr.qp_state = IBV_QPS_RTR;
-    attr.path_mtu = IBV_MTU_256;
+    attr.path_mtu = IBV_MTU_256; /* this field specifies the MTU from source code*/
     attr.dest_qp_num = remote_qpn;
     attr.rq_psn = 0;
     attr.max_dest_rd_atomic = 1;
@@ -770,7 +772,13 @@ static int modify_qp_to_rtr(struct ibv_qp *qp, uint32_t remote_qpn, uint16_t dli
         attr.ah_attr.is_global = 1;
         attr.ah_attr.port_num = 1;
         memcpy(&attr.ah_attr.grh.dgid, dgid, 16);
-        attr.ah_attr.grh.flow_label = 0;
+        /* this field specify the UDP source port. if the target UDP source port is expected to be X, the value of flow_label = X ^ 0xC000 */
+        if (config.udp_sport == 0){
+            attr.ah_attr.grh.flow_label = 0;
+        }
+        else{
+            attr.ah_attr.grh.flow_label = config.udp_sport ^ 0xC000;
+        }
         attr.ah_attr.grh.hop_limit = 1;
         attr.ah_attr.grh.sgid_index = config.gid_idx;
         attr.ah_attr.grh.traffic_class = 0;
@@ -1036,6 +1044,10 @@ static void print_config(void)
     {
         fprintf(stdout, " GID index : %u\n", config.gid_idx);
     }
+    if (config.udp_sport == 0 || (config.udp_sport >= 49152 && config.udp_sport <= 65535))
+    {
+        fprintf(stdout, " UDP source port : %u\n", config.udp_sport);
+    }
     fprintf(stdout, " ------------------------------------------------\n\n");
 }
 
@@ -1062,6 +1074,7 @@ static void usage(const char *argv0)
     fprintf(stdout, " -d, --ib-dev <dev> use IB device <dev> (default first device found)\n");
     fprintf(stdout, " -i, --ib-port <port> use port <port> of IB device (default 1)\n");
     fprintf(stdout, " -g, --gid_idx <git index> gid index to be used in GRH (default not used)\n");
+    fprintf(stdout, " -u, --udp_sport <udp_sport> UDP src port\n");
 }
 
 /******************************************************************************
@@ -1094,10 +1107,11 @@ int main(int argc, char *argv[])
             {.name = "ib-dev", .has_arg = 1, .val = 'd' },
             {.name = "ib-port", .has_arg = 1, .val = 'i' },
             {.name = "gid-idx", .has_arg = 1, .val = 'g' },
+            {.name = "udp-sport", .has_arg = 1, .val = 'u' },
             {.name = NULL, .has_arg = 0, .val = '\0'}
         };
 
-        c = getopt_long(argc, argv, "p:d:i:g:", long_options, NULL);
+        c = getopt_long(argc, argv, "p:d:i:g:u:", long_options, NULL);
         if(c == -1)
         {
             break;
@@ -1121,6 +1135,14 @@ int main(int argc, char *argv[])
         case 'g':
             config.gid_idx = strtoul(optarg, NULL, 0);
             if(config.gid_idx < 0)
+            {
+                usage(argv[0]);
+                return 1;
+            }
+            break;
+        case 'u':
+            config.udp_sport = strtoul(optarg, NULL, 0);
+            if(config.udp_sport < 49152 || config.udp_sport > 65535)
             {
                 usage(argv[0]);
                 return 1;
