@@ -570,6 +570,15 @@ static int resources_create(struct resources *res)
     dev_list = NULL;
     ib_dev = NULL;
 
+    /* query device attributions */
+    if (ibv_query_device(res->ib_ctx, &res->device_attr))
+    {
+        fprintf(stderr, "ibv_query_device on dev %u failed\n", ib_dev);
+        rc = 1;
+        goto resources_create_exit;
+    }
+    fprintf(stdout, "dev.max_qp = %d\n", res->device_attr.max_qp);
+
     /* query port properties */
     if(ibv_query_port(res->ib_ctx, config.ib_port, &res->port_attr))
     {
