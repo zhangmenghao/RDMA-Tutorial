@@ -573,7 +573,7 @@ static int resources_create(struct resources *res)
     /* query device attributions */
     if (ibv_query_device(res->ib_ctx, &res->device_attr))
     {
-        fprintf(stderr, "ibv_query_device on dev %u failed\n", ib_dev);
+        fprintf(stderr, "ibv_query_device on device %s failed\n", config.dev_name);
         rc = 1;
         goto resources_create_exit;
     }
